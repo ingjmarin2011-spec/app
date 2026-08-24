@@ -1,0 +1,19 @@
+name: pos_sqlite_app
+description: "Sistema POS movil integrado con base de datos SQLite offline"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  webview_flutter: ^4.4.2
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/index.html

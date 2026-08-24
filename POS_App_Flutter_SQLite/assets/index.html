@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Sistema POS Móvil</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  <style>
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    @media print {
+      body * { visibility: hidden; }
+      #area-impresion, #area-impresion * { visibility: visible; }
+      #area-impresion { position: absolute; left: 0; top: 0; width: 100%; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans antialiased pb-24 select-none">
+
+  <!-- ENCABEZADO -->
+  <header class="bg-indigo-600 text-white p-4 sticky top-0 z-40 shadow-md flex justify-between items-center no-print">
+    <div>
+      <h1 class="text-base font-bold"><i class="fa-solid fa-cash-register mr-1"></i> Sistema POS SQLite</h1>
+      <p class="text-xs text-indigo-200">Tasa: <span id="lbl-tasa-header" class="font-bold text-white">0.00</span> Bs/$</p>
+    </div>
+    <button onclick="abrirModalTasa()" class="bg-indigo-700 hover:bg-indigo-800 px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1">
+      <i class="fa-solid fa-coins"></i> Tasa
+    </button>
+  </header>
+
+  <main class="p-4 max-w-md mx-auto space-y-4 no-print">
+
+    <!-- SECCIÓN 1: FACTURACIÓN -->
+    <section id="sec-factura" class="space-y-4">
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+        <div class="flex justify-between items-center mb-2">
+          <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Cliente</h2>
+          <button onclick="abrirModalCliente()" class="text-indigo-600 text-xs font-bold hover:underline flex items-center gap-1">
+            <i class="fa-solid fa-magnifying-glass"></i> Buscar
+          </button>
+        </div>
+        <div class="space-y-2">
+          <div class="flex gap-2">
+            <input type="text" id="cli-cedula" placeholder="Cédula / RIF" onchange="buscarClientePorCedulaDirecto()" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm">
+            <button onclick="buscarClientePorCedulaDirecto()" class="bg-slate-200 text-slate-700 px-3 rounded-xl font-bold text-xs"><i class="fa-solid fa-search"></i></button>
+          </div>
+          <input type="text" id="cli-nombre" placeholder="Nombre y Apellido" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm">
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Detalle Factura</h2>
+          <button onclick="abrirModalProductos()" class="bg-indigo-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-indigo-700 flex items-center gap-1">
+            <i class="fa-solid fa-plus"></i> Producto
+          </button>
+        </div>
+
+        <div id="carrito-lista" class="space-y-2 mb-4 max-h-56 overflow-y-auto no-scrollbar">
+          <p class="text-xs text-slate-400 text-center py-6">No hay productos añadidos</p>
+        </div>
+
+        <div class="border-t pt-3 space-y-2">
+          <div class="flex justify-between font-bold text-slate-700 text-base">
+            <span>Total ($):</span>
+            <span id="tot-dol" class="text-indigo-600">$0.00</span>
+          </div>
+          <div class="flex justify-between font-bold text-slate-500 text-sm">
+            <span>Total (Bs):</span>
+            <span id="tot-bs">Bs. 0.00</span>
+          </div>
+          
+          <div class="mt-2">
+            <label class="text-[10px] text-slate-400 font-bold uppercase">Condición de Pago</label>
+            <select id="fac-condicion" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm font-bold text-slate-700 focus:outline-none focus:border-indigo-400">
+              <option value="PAGADA">Pagada Completo</option>
+              <option value="PENDIENTE">Cuenta por Cobrar (Pendiente)</option>
+            </select>
+          </div>
+        </div>
+
+        <button onclick="procesarVenta()" class="w-full mt-4 bg-emerald-600 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-emerald-600/30 active:scale-95 transition flex justify-center items-center gap-2">
+          <i class="fa-solid fa-receipt"></i> Emitir Factura
+        </button>
+      </div>
+    </section>
+
+    <!-- SECCIÓN 2: INVENTARIO -->
+    <section id="sec-inventario" class="space-y-4 hidden">
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider" id="inv-form-title">Nuevo Producto</h2>
+          <button id="btn-cancel-edit" onclick="limpiarFormInventario()" class="text-xs text-rose-500 font-bold hidden">Cancelar</button>
+        </div>
+        <input type="hidden" id="inv-id">
+        <div class="space-y-2 mb-3">
+          <input type="text" id="inv-nombre" placeholder="Nombre Producto" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm">
+          <div class="grid grid-cols-2 gap-2">
+            <input type="number" step="0.01" id="inv-dol" oninput="recalcularPreciosInventario('DOL')" placeholder="Precio ($)" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm">
+            <input type="number" step="0.01" id="inv-bs" oninput="recalcularPreciosInventario('BS')" placeholder="Precio (Bs)" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm">
+          </div>
+          <input type="number" step="0.001" id="inv-cant" placeholder="Existencia Inicial / Entrante" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm">
+        </div>
+        <button onclick="guardarInventario()" class="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-md"><span id="btn-inv-text">Guardar Producto</span></button>
+      </div>
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+        <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Stock Actual</h2>
+        <div id="lista-inventario" class="space-y-2 max-h-64 overflow-y-auto no-scrollbar"></div>
+      </div>
+    </section>
+
+    <!-- SECCIÓN 3: REPORTES / FACTURAS -->
+    <section id="sec-reportes" class="space-y-4 hidden">
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 space-y-3">
+        <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Filtrar Facturas</h2>
+        <div class="grid grid-cols-2 gap-2">
+          <div><label class="text-[10px] text-slate-400 font-bold">Desde</label><input type="date" id="filtro-desde" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs"></div>
+          <div><label class="text-[10px] text-slate-400 font-bold">Hasta</label><input type="date" id="filtro-hasta" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs"></div>
+        </div>
+        <button onclick="cargarReporteFacturas()" class="w-full bg-indigo-600 text-white font-bold py-2.5 rounded-xl text-xs flex justify-center items-center gap-1"><i class="fa-solid fa-filter"></i> Buscar</button>
+      </div>
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+        <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Histórico de Ventas</h2>
+        <div id="lista-reporte-facturas" class="space-y-2 max-h-80 overflow-y-auto no-scrollbar"></div>
+      </div>
+    </section>
+
+    <!-- SECCIÓN 4: CLIENTES -->
+    <section id="sec-clientes" class="space-y-4 hidden">
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+        <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Registrar Cliente</h2>
+        <div class="space-y-2 mb-3">
+          <input type="text" id="reg-cedula" placeholder="Cédula / RIF" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm">
+          <input type="text" id="reg-nombre" placeholder="Nombre y Apellido" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm">
+          <input type="text" id="reg-telefono" placeholder="Teléfono" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm">
+          <input type="text" id="reg-direccion" placeholder="Dirección" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm">
+        </div>
+        <button onclick="guardarClienteForm()" class="w-full bg-indigo-600 text-white font-bold py-3 rounded-xl shadow-md">Guardar Cliente</button>
+      </div>
+    </section>
+
+    <!-- SECCIÓN 5: CUENTAS POR COBRAR (CxC) -->
+    <section id="sec-cxc" class="space-y-4 hidden">
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+        <div class="flex justify-between items-center mb-3">
+          <h2 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Cuentas por Cobrar</h2>
+          <button onclick="cargarCxC()" class="text-indigo-600 text-xs font-bold"><i class="fa-solid fa-rotate-right"></i> Refrescar</button>
+        </div>
+        <div id="lista-cxc" class="space-y-2 max-h-[400px] overflow-y-auto no-scrollbar"></div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL DETALLE DE FACTURA / IMPRESIÓN (PDF) -->
+  <div id="modal-detalle-factura" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl w-full max-w-sm p-4 space-y-4 shadow-xl overflow-hidden">
+      <div id="area-impresion" class="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs font-mono">
+        <div class="text-center mb-3">
+          <h3 class="font-bold text-sm tracking-wider uppercase">TICKET DE VENTA</h3>
+          <p id="fact-num" class="font-bold text-slate-600"></p>
+          <p id="fact-fecha" class="text-[10px] text-slate-400"></p>
+        </div>
+        <div class="border-t border-b border-dashed py-2 my-2 space-y-1">
+          <p><strong>Cliente:</strong> <span id="fact-cliente"></span></p>
+          <p><strong>Cédula:</strong> <span id="fact-cedula"></span></p>
+          <p><strong>Estatus:</strong> <span id="fact-estatus" class="font-bold"></span></p>
+        </div>
+        <table class="w-full text-left my-2">
+          <thead><tr class="border-b"><th>Cant</th><th>Prod</th><th class="text-right">Total</th></tr></thead>
+          <tbody id="fact-items-body" class="divide-y divide-slate-100"></tbody>
+        </table>
+        <div class="border-t border-dashed pt-2 space-y-1 text-right font-bold">
+          <p>Total ($): <span id="fact-tot-dol">$0.00</span></p>
+          <p>Total (Bs): <span id="fact-tot-bs">Bs. 0.00</span></p>
+        </div>
+      </div>
+      <div class="flex gap-2 no-print">
+        <button onclick="cerrarModalDetalle()" class="w-1/3 bg-slate-200 py-2.5 rounded-xl font-bold text-xs">Cerrar</button>
+        <button onclick="window.print()" class="w-2/3 bg-indigo-600 text-white py-2.5 rounded-xl font-bold text-xs shadow-md"><i class="fa-solid fa-print"></i> Imprimir</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODALES DE BÚSQUEDA Y TASA -->
+  <div id="modal-cliente" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl w-full max-w-sm p-4 space-y-3 shadow-xl">
+      <div class="flex justify-between items-center"><h3 class="font-bold text-sm">Buscar Cliente</h3><button onclick="cerrarModalCliente()" class="text-slate-400 text-lg">&times;</button></div>
+      <input type="text" id="busqueda-cliente" oninput="filtrarClientesModal()" placeholder="Cédula o Nombre..." class="w-full bg-slate-100 rounded-xl p-2.5 text-sm">
+      <div id="lista-clientes-modal" class="max-h-56 overflow-y-auto space-y-1.5 no-scrollbar"></div>
+    </div>
+  </div>
+  <div id="modal-producto" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl w-full max-w-sm p-4 space-y-3 shadow-xl">
+      <div class="flex justify-between items-center"><h3 class="font-bold text-sm">Seleccionar Producto</h3><button onclick="cerrarModalProductos()" class="text-slate-400 text-lg">&times;</button></div>
+      <input type="text" id="busqueda-producto" oninput="filtrarProductosModal()" placeholder="Buscar producto..." class="w-full bg-slate-100 rounded-xl p-2.5 text-sm">
+      <div id="lista-productos-modal" class="max-h-60 overflow-y-auto space-y-1.5 no-scrollbar"></div>
+    </div>
+  </div>
+  <div id="modal-tasa" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl w-full max-w-xs p-4 space-y-3 shadow-xl">
+      <h3 class="font-bold text-sm">Actualizar Tasa (Bs/$)</h3>
+      <input type="number" step="0.01" id="input-nueva-tasa" class="w-full bg-slate-100 border-none rounded-xl p-3 text-center text-lg font-bold">
+      <div class="flex gap-2">
+        <button onclick="cerrarModalTasa()" class="w-1/2 bg-slate-200 py-2 rounded-xl text-xs font-bold">Cancelar</button>
+        <button onclick="guardarTasa()" class="w-1/2 bg-indigo-600 text-white py-2 rounded-xl text-xs font-bold">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL ABONAR CXC -->
+  <div id="modal-abono" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl w-full max-w-xs p-4 space-y-3 shadow-xl text-center">
+      <h3 class="font-bold text-sm border-b pb-2">Registrar Abono ($)</h3>
+      <p class="text-xs text-slate-500">Factura: <span id="abono-fac" class="font-bold text-slate-800"></span></p>
+      <p class="text-xs text-slate-500">Saldo pendiente: <span id="abono-deuda" class="font-bold text-rose-500 text-base"></span></p>
+      <input type="number" step="0.01" id="input-abono" placeholder="Monto a abonar..." class="w-full bg-slate-100 border-none rounded-xl p-3 text-center text-lg font-bold">
+      <div class="flex gap-2 pt-2">
+        <button onclick="cerrarModalAbono()" class="w-1/2 bg-slate-200 py-2.5 rounded-xl text-xs font-bold">Cancelar</button>
+        <button onclick="ejecutarAbono()" class="w-1/2 bg-emerald-600 text-white py-2.5 rounded-xl text-xs font-bold shadow-md">Abonar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- NAVEGACIÓN INFERIOR -->
+  <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around py-2.5 z-40 no-print">
+    <button onclick="cambiarTab('factura')" id="btn-tab-factura" class="flex flex-col items-center text-indigo-600 font-bold text-[10px] w-1/5">
+      <i class="fa-solid fa-file-invoice text-base mb-0.5"></i> Vender
+    </button>
+    <button onclick="cambiarTab('inventario')" id="btn-tab-inventario" class="flex flex-col items-center text-slate-400 font-bold text-[10px] w-1/5">
+      <i class="fa-solid fa-boxes-stacked text-base mb-0.5"></i> Stock
+    </button>
+    <button onclick="cambiarTab('reportes')" id="btn-tab-reportes" class="flex flex-col items-center text-slate-400 font-bold text-[10px] w-1/5">
+      <i class="fa-solid fa-chart-line text-base mb-0.5"></i> Reportes
+    </button>
+    <button onclick="cambiarTab('clientes')" id="btn-tab-clientes" class="flex flex-col items-center text-slate-400 font-bold text-[10px] w-1/5">
+      <i class="fa-solid fa-users text-base mb-0.5"></i> Clientes
+    </button>
+    <button onclick="cambiarTab('cxc')" id="btn-tab-cxc" class="flex flex-col items-center text-slate-400 font-bold text-[10px] w-1/5">
+      <i class="fa-solid fa-hand-holding-dollar text-base mb-0.5"></i> CxC
+    </button>
+  </nav>
+
+  <script>
+    // Hybrid Flutter SQFlite Native Bridge
+    let dbInventario = [], dbClientes = [], dbFacturas = [], carrito = [];
+    let tasaCambio = 1, ultimaBaseCalculo = 'DOL';
+
+    // Bridge execution promise helper
+    let msgId = 0;
+    const pendingRequests = {};
+
+    function callNative(action, data) {
+      return new Promise((resolve, reject) => {
+        const id = ++msgId;
+        pendingRequests[id] = { resolve, reject };
+        if (window.FlutterBridge) {
+          window.FlutterBridge.postMessage(JSON.stringify({ id, action, data }));
+        } else {
+          console.warn("FlutterBridge non-existent, fallbacking locally");
+        }
+      });
+    }
+
+    window.onNativeResponse = function(id, responseJson) {
+      if (pendingRequests[id]) {
+        const res = JSON.parse(responseJson);
+        if (res.error) {
+          pendingRequests[id].reject(new Error(res.error));
+        } else {
+          pendingRequests[id].resolve(res.result);
+        }
+        delete pendingRequests[id];
+      }
+    };
+
+    window.onload = function() { setTimeout(sincronizarTodo, 200); };
+
+    async function sincronizarTodo() {
+      try {
+        tasaCambio = await callNative('obtenerTasa', {});
+        document.getElementById('lbl-tasa-header').innerText = parseFloat(tasaCambio).toFixed(2);
+        dbInventario = await callNative('obtenerInventario', {});
+        renderListaInventario();
+        dbClientes = await callNative('obtenerClientes', {});
+      } catch (e) {
+        console.error("Error syncing with SQLite:", e);
+      }
+    }
+
+    function cambiarTab(tab) {
+      ['factura', 'inventario', 'reportes', 'clientes', 'cxc'].forEach(t => {
+        document.getElementById(`sec-${t}`).classList.add('hidden');
+        document.getElementById(`btn-tab-${t}`).className = "flex flex-col items-center text-slate-400 font-bold text-[10px] w-1/5";
+      });
+      document.getElementById(`sec-${tab}`).classList.remove('hidden');
+      document.getElementById(`btn-tab-${tab}`).className = "flex flex-col items-center text-indigo-600 font-bold text-[10px] w-1/5";
+
+      if (tab === 'reportes') cargarReporteFacturas();
+      if (tab === 'cxc') cargarCxC();
+    }
+
+    async function cargarReporteFacturas() {
+      const desde = document.getElementById('filtro-desde').value;
+      const hasta = document.getElementById('filtro-hasta').value;
+      dbFacturas = await callNative('obtenerFacturas', { fechaDesde: desde, fechaHasta: hasta });
+      renderListaReporte();
+    }
+
+    function renderListaReporte() {
+      const cont = document.getElementById('lista-reporte-facturas');
+      cont.innerHTML = "";
+      if (dbFacturas.length === 0) {
+        cont.innerHTML = `<p class="text-xs text-slate-400 text-center py-6">No hay facturas registradas</p>`;
+        return;
+      }
+      dbFacturas.forEach((f, index) => {
+        const estatusBadge = f.estatus === 'PAGADA' ? 
+          `<span class="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">PAGADA</span>` : 
+          `<span class="text-[9px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-bold">CxC</span>`;
+
+        cont.innerHTML += `
+          <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl flex justify-between items-center text-xs">
+            <div>
+              <p class="font-bold text-slate-700 flex items-center gap-1">${f.numFactura} ${estatusBadge}</p>
+              <p class="text-[10px] text-slate-400">${f.fecha} - ${f.cliente}</p>
+              <p class="font-bold text-indigo-600 text-xs mt-0.5">$${f.totalDol.toFixed(2)} | <span class="text-slate-500">Bs. ${f.totalBs.toFixed(2)}</span></p>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <button onclick="verDetalleFactura(${index})" class="p-2 bg-indigo-50 text-indigo-600 rounded-lg font-bold"><i class="fa-solid fa-eye"></i></button>
+              <button onclick="confirmarEliminarFactura('${f.numFactura}')" class="p-2 bg-rose-50 text-rose-600 rounded-lg font-bold"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    function verDetalleFactura(index) {
+      const f = dbFacturas[index];
+      document.getElementById('fact-num').innerText = f.numFactura;
+      document.getElementById('fact-fecha').innerText = f.fecha;
+      document.getElementById('fact-cliente').innerText = f.cliente;
+      document.getElementById('fact-cedula').innerText = f.cedula;
+      document.getElementById('fact-estatus').innerText = f.estatus === 'PAGADA' ? 'PAGADA COMPLETO' : `PENDIENTE (Saldo: $${f.saldo.toFixed(2)})`;
+      
+      const body = document.getElementById('fact-items-body');
+      body.innerHTML = "";
+      const items = typeof f.items === 'string' ? JSON.parse(f.items) : f.items;
+      items.forEach(item => { body.innerHTML += `<tr><td class="py-1">${item.cantidad}</td><td class="py-1">${item.nombre}</td><td class="py-1 text-right">$${(item.precioDol * item.cantidad).toFixed(2)}</td></tr>`; });
+
+      document.getElementById('fact-tot-dol').innerText = `$${f.totalDol.toFixed(2)}`;
+      document.getElementById('fact-tot-bs').innerText = `Bs. ${f.totalBs.toFixed(2)}`;
+      document.getElementById('modal-detalle-factura').classList.remove('hidden');
+    }
+
+    function cerrarModalDetalle() { document.getElementById('modal-detalle-factura').classList.add('hidden'); }
+
+    async function confirmarEliminarFactura(numFactura) {
+      if (confirm(`¿Estás seguro de eliminar la factura ${numFactura}? Se reintegrará el stock.`)) {
+        await callNative('eliminarFactura', { numFactura });
+        alert("Factura eliminada."); 
+        sincronizarTodo(); 
+        cargarReporteFacturas();
+      }
+    }
+
+    let facturaAbonoActiva = "";
+    let saldoAbonoMaximo = 0;
+    
+    async function cargarCxC() {
+      dbFacturas = await callNative('obtenerFacturas', {});
+      renderListaCxC();
+    }
+
+    function renderListaCxC() {
+      const cont = document.getElementById('lista-cxc');
+      cont.innerHTML = "";
+      const pendientes = dbFacturas.filter(f => f.estatus === 'PENDIENTE');
+
+      if (pendientes.length === 0) {
+        cont.innerHTML = `<p class="text-xs text-slate-400 text-center py-6">No hay cuentas pendientes por cobrar 🎉</p>`;
+        return;
+      }
+
+      const clientesMap = {};
+      pendientes.forEach(f => {
+        if (!clientesMap[f.cedula]) {
+          clientesMap[f.cedula] = {
+            nombre: f.cliente,
+            cedula: f.cedula,
+            totalDeuda: 0,
+            facturas: []
+          };
+        }
+        clientesMap[f.cedula].totalDeuda += f.saldo;
+        clientesMap[f.cedula].facturas.push(f);
+      });
+
+      Object.values(clientesMap).forEach((group, groupIdx) => {
+        let htmlFacturas = "";
+        
+        group.facturas.forEach(f => {
+          htmlFacturas += `
+            <div class="p-2.5 bg-white border border-slate-100 rounded-xl flex justify-between items-center text-xs mt-2">
+              <div>
+                <p class="font-bold text-slate-700">${f.numFactura} <span class="text-[10px] text-slate-400">(${f.fecha})</span></p>
+                <p class="text-[10px] text-slate-500">Total: $${f.totalDol.toFixed(2)} | Abona: $${f.abonos.toFixed(2)}</p>
+                <p class="font-bold text-rose-600">Saldo: $${f.saldo.toFixed(2)}</p>
+              </div>
+              <button onclick="abrirModalAbono('${f.numFactura}', ${f.saldo})" class="bg-emerald-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow active:scale-95 transition">
+                Abonar
+              </button>
+            </div>
+          `;
+        });
+
+        cont.innerHTML += `
+          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3 space-y-2">
+            <div class="flex justify-between items-center cursor-pointer" onclick="document.getElementById('group-${groupIdx}').classList.toggle('hidden')">
+              <div>
+                <h3 class="font-bold text-slate-800 text-sm">${group.nombre}</h3>
+                <p class="text-[10px] text-slate-400">CI/RIF: ${group.cedula} • ${group.facturas.length} factura(s)</p>
+              </div>
+              <div class="text-right">
+                <span class="text-[10px] font-bold text-slate-400 block uppercase">Deuda Total</span>
+                <span class="text-sm font-black text-rose-600">$${group.totalDeuda.toFixed(2)}</span>
+              </div>
+            </div>
+            <div id="group-${groupIdx}" class="pt-1 border-t border-slate-200">
+              ${htmlFacturas}
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    function abrirModalAbono(numFact, saldoActual) {
+      facturaAbonoActiva = numFact;
+      saldoAbonoMaximo = saldoActual;
+      document.getElementById('abono-fac').innerText = numFact;
+      document.getElementById('abono-deuda').innerText = `$${saldoActual.toFixed(2)}`;
+      document.getElementById('input-abono').value = "";
+      document.getElementById('modal-abono').classList.remove('hidden');
+    }
+
+    function cerrarModalAbono() { document.getElementById('modal-abono').classList.add('hidden'); }
+
+    async function ejecutarAbono() {
+      const montoInput = document.getElementById('input-abono').value;
+      const monto = parseFloat(montoInput);
+
+      if (!montoInput || isNaN(monto) || monto <= 0) {
+        return alert("Por favor, ingrese un monto válido a abonar.");
+      }
+
+      if (monto > (saldoAbonoMaximo + 0.001)) {
+        return alert(`El monto a abonar ($${monto.toFixed(2)}) no puede ser mayor que la deuda pendiente ($${saldoAbonoMaximo.toFixed(2)}).`);
+      }
+
+      try {
+        const res = await callNative('registrarAbono', { numFactura: facturaAbonoActiva, montoAbono: monto });
+        alert(res.saldoActual <= 0 ? "¡Deuda cancelada en su totalidad!" : `Abono registrado. Saldo restante: $${res.saldoActual.toFixed(2)}`);
+        cerrarModalAbono();
+        cargarCxC();
+      } catch (err) {
+        alert("Error: " + err.message);
+      }
+    }
+
+    function abrirModalTasa() { document.getElementById('input-nueva-tasa').value = tasaCambio; document.getElementById('modal-tasa').classList.remove('hidden'); }
+    function cerrarModalTasa() { document.getElementById('modal-tasa').classList.add('hidden'); }
+    
+    async function guardarTasa() {
+      const v = document.getElementById('input-nueva-tasa').value;
+      if (!v || v <= 0) return;
+      tasaCambio = await callNative('actualizarTasa', { nuevaTasa: v });
+      document.getElementById('lbl-tasa-header').innerText = parseFloat(tasaCambio).toFixed(2);
+      cerrarModalTasa(); renderCarrito();
+      dbInventario = await callNative('obtenerInventario', {});
+      renderListaInventario();
+    }
+
+    function abrirModalCliente() { filtrarClientesModal(); document.getElementById('modal-cliente').classList.remove('hidden'); }
+    function cerrarModalCliente() { document.getElementById('modal-cliente').classList.add('hidden'); }
+    function filtrarClientesModal() {
+      const q = document.getElementById('busqueda-cliente').value.toLowerCase(); const list = document.getElementById('lista-clientes-modal'); list.innerHTML = "";
+      dbClientes.filter(c => c.cedula.toLowerCase().includes(q) || c.nombre.toLowerCase().includes(q)).forEach(c => {
+        list.innerHTML += `<div onclick="seleccionarCliente('${c.cedula}', '${c.nombre}')" class="p-2.5 bg-slate-50 hover:bg-indigo-50 rounded-xl cursor-pointer flex justify-between text-xs"><div><p class="font-bold">${c.nombre}</p><p class="text-slate-400">V-${c.cedula}</p></div></div>`;
+      });
+    }
+    function seleccionarCliente(ced, nom) { document.getElementById('cli-cedula').value = ced; document.getElementById('cli-nombre').value = nom; cerrarModalCliente(); }
+    
+    function buscarClientePorCedulaDirecto() {
+      const cedulaInput = document.getElementById('cli-cedula').value.trim();
+      if (!cedulaInput) return;
+      const c = dbClientes.find(x => x.cedula === cedulaInput);
+      if (c) {
+        document.getElementById('cli-nombre').value = c.nombre;
+      } else {
+        alert("Cliente no registrado. Se abrirá el formulario para registrarlo.");
+        cambiarTab('clientes');
+        document.getElementById('reg-cedula').value = cedulaInput;
+        document.getElementById('reg-nombre').focus();
+      }
+    }
+
+    function abrirModalProductos() { filtrarProductosModal(); document.getElementById('modal-producto').classList.remove('hidden'); }
+    function cerrarModalProductos() { document.getElementById('modal-producto').classList.add('hidden'); }
+    function filtrarProductosModal() {
+      const q = document.getElementById('busqueda-producto').value.toLowerCase(); const list = document.getElementById('lista-productos-modal'); list.innerHTML = "";
+      dbInventario.filter(p => p.nombre.toLowerCase().includes(q) && p.existencia > 0).forEach(p => {
+        list.innerHTML += `<div onclick="agregarAlCarrito(${p.id})" class="p-2.5 bg-slate-50 hover:bg-indigo-50 rounded-xl cursor-pointer flex justify-between text-xs"><div><p class="font-bold">${p.nombre}</p><p class="text-slate-400">Stock: ${p.existencia} | $${p.precioDol.toFixed(2)}</p></div><span class="font-bold text-indigo-600">Bs. ${p.precioBs.toFixed(2)}</span></div>`;
+      });
+    }
+
+    function agregarAlCarrito(idProd) {
+      const prod = dbInventario.find(p => p.id === idProd); const ex = carrito.find(i => i.id === idProd);
+      if (ex) { if (ex.cantidad + 1 > prod.existencia) return alert("Excede stock"); ex.cantidad++; } 
+      else carrito.push({ ...prod, cantidad: 1 });
+      cerrarModalProductos(); renderCarrito();
+    }
+
+    function cambiarCantidadItem(index, valor) {
+      const cant = parseFloat(valor); if (isNaN(cant) || cant <= 0) return;
+      const prod = dbInventario.find(p => p.id === carrito[index].id);
+      if (cant > prod.existencia) return alert(`Stock máximo: ${prod.existencia}`);
+      carrito[index].cantidad = cant; renderCarrito();
+    }
+    function eliminarDelCarrito(i) { carrito.splice(i, 1); renderCarrito(); }
+
+    function renderCarrito() {
+      const cont = document.getElementById('carrito-lista');
+      if (carrito.length === 0) {
+        cont.innerHTML = `<p class="text-xs text-slate-400 text-center py-6">No hay productos añadidos</p>`;
+        document.getElementById('tot-dol').innerText = "$0.00"; document.getElementById('tot-bs').innerText = "Bs. 0.00";
+        return;
+      }
+      let totDol = 0; cont.innerHTML = "";
+      carrito.forEach((item, i) => {
+        totDol += item.precioDol * item.cantidad;
+        cont.innerHTML += `
+          <div class="p-2.5 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs gap-2">
+            <div class="flex-1"><p class="font-bold text-slate-700">${item.nombre}</p><p class="text-[10px] text-slate-400">$${item.precioDol.toFixed(2)} c/u</p></div>
+            <div class="flex items-center gap-1">
+              <input type="number" step="0.001" value="${item.cantidad}" onchange="cambiarCantidadItem(${i}, this.value)" class="w-16 bg-white border rounded-lg p-1 text-center font-bold text-xs">
+              <button onclick="eliminarDelCarrito(${i})" class="text-rose-500 p-1"><i class="fa-solid fa-trash"></i></button>
+            </div>
+          </div>`;
+      });
+      document.getElementById('tot-dol').innerText = `$${totDol.toFixed(2)}`;
+      document.getElementById('tot-bs').innerText = `Bs. ${(totDol * tasaCambio).toFixed(2)}`;
+    }
+
+    async function procesarVenta() {
+      const cliente = document.getElementById('cli-nombre').value, cedula = document.getElementById('cli-cedula').value;
+      const estatus = document.getElementById('fac-condicion').value;
+
+      if (!cliente || !cedula) return alert("Ingrese cliente y cédula.");
+      if (carrito.length === 0) return alert("Añada productos.");
+
+      const payload = {
+        cliente, cedula, items: carrito, estatus: estatus,
+        totalDol: parseFloat(document.getElementById('tot-dol').innerText.replace('$', '')),
+        totalBs: parseFloat(document.getElementById('tot-bs').innerText.replace('Bs. ', ''))
+      };
+
+      try {
+        const res = await callNative('procesarFactura', payload);
+        alert(`¡Factura ${res.numFactura} emitida!`);
+        carrito = []; document.getElementById('cli-cedula').value = ""; document.getElementById('cli-nombre').value = "";
+        document.getElementById('fac-condicion').value = "PAGADA";
+        renderCarrito(); sincronizarTodo();
+      } catch(e) {
+        alert("Error al procesar la factura: " + e.message);
+      }
+    }
+
+    function recalcularPreciosInventario(b) {
+      ultimaBaseCalculo = b; const d = document.getElementById('inv-dol'), bs = document.getElementById('inv-bs');
+      if (b === 'DOL') bs.value = ((parseFloat(d.value) || 0) * tasaCambio).toFixed(2);
+      else d.value = (tasaCambio > 0 ? (parseFloat(bs.value) || 0) / tasaCambio : 0).toFixed(2);
+    }
+
+    async function guardarInventario() {
+      const prod = {
+        id: document.getElementById('inv-id').value, nombre: document.getElementById('inv-nombre').value,
+        precioDol: document.getElementById('inv-dol').value, precioBs: document.getElementById('inv-bs').value,
+        existencia: document.getElementById('inv-cant').value, baseCalculo: ultimaBaseCalculo, esEntradaMercancia: !document.getElementById('inv-id').value
+      };
+      if (!prod.nombre || !prod.existencia) return alert("Complete los datos.");
+      dbInventario = await callNative('guardarProducto', { prod, tasaActual: tasaCambio });
+      renderListaInventario(); 
+      limpiarFormInventario(); 
+      alert("Producto Guardado");
+    }
+
+    function seleccionarParaEditar(id) {
+      const p = dbInventario.find(x => x.id === id); if (!p) return;
+      document.getElementById('inv-id').value = p.id; document.getElementById('inv-nombre').value = p.nombre;
+      document.getElementById('inv-dol').value = p.precioDol; document.getElementById('inv-bs').value = p.precioBs; document.getElementById('inv-cant').value = p.existencia;
+      document.getElementById('inv-form-title').innerText = `Editar #${p.id}`; document.getElementById('btn-inv-text').innerText = "Actualizar"; document.getElementById('btn-cancel-edit').classList.remove('hidden');
+    }
+
+    function limpiarFormInventario() {
+      document.getElementById('inv-id').value = ""; document.getElementById('inv-nombre').value = ""; document.getElementById('inv-dol').value = ""; document.getElementById('inv-bs').value = ""; document.getElementById('inv-cant').value = "";
+      document.getElementById('inv-form-title').innerText = "Nuevo Producto"; document.getElementById('btn-inv-text').innerText = "Guardar Producto"; document.getElementById('btn-cancel-edit').classList.add('hidden');
+    }
+
+    function renderListaInventario() {
+      const cont = document.getElementById('lista-inventario'); cont.innerHTML = "";
+      dbInventario.forEach(p => {
+        cont.innerHTML += `<div onclick="seleccionarParaEditar(${p.id})" class="p-2.5 bg-slate-50 hover:bg-indigo-50 border rounded-xl flex justify-between items-center text-xs cursor-pointer"><div><p class="font-bold">#${p.id} - ${p.nombre}</p><p class="text-slate-400">$${p.precioDol.toFixed(2)} | Bs. ${p.precioBs.toFixed(2)}</p></div><span class="px-2 py-1 bg-indigo-100 text-indigo-700 font-bold rounded-lg">${p.existencia} Cant/Kg</span></div>`;
+      });
+    }
+
+    async function guardarClienteForm() {
+      const cli = { 
+        cedula: document.getElementById('reg-cedula').value, 
+        nombre: document.getElementById('reg-nombre').value, 
+        telefono: document.getElementById('reg-telefono').value, 
+        direccion: document.getElementById('reg-direccion').value 
+      };
+
+      if (!cli.cedula || !cli.nombre) return alert("Cédula y Nombre obligatorios");
+
+      dbClientes = await callNative('guardarCliente', { cliente: cli });
+      alert("Cliente guardado con éxito");
+
+      document.getElementById('cli-cedula').value = cli.cedula;
+      document.getElementById('cli-nombre').value = cli.nombre;
+
+      document.getElementById('reg-cedula').value = ""; 
+      document.getElementById('reg-nombre').value = ""; 
+      document.getElementById('reg-telefono').value = ""; 
+      document.getElementById('reg-direccion').value = ""; 
+
+      cambiarTab('factura');
+    }
+  </script>
+</body>
+</html>
