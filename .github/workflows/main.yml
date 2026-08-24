@@ -24,6 +24,9 @@ jobs:
         flutter-version: '3.19.x'
         channel: 'stable'
 
+    - name: Generate Android Project Structure
+      run: flutter create --platforms=android .
+
     - name: Install Dependencies
       run: flutter pub get
 
