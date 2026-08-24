@@ -27,11 +27,23 @@ jobs:
     - name: Generate Android Project Structure
       run: flutter create --platforms=android .
 
+    - name: Fix Android SDK Versions
+      run: |
+        sed -i 's/compileSdkVersion .*/compileSdkVersion 34/' android/app/build.gradle
+        sed -i 's/targetSdkVersion .*/targetSdkVersion 34/' android/app/build.gradle
+        sed -i 's/minSdkVersion .*/minSdkVersion 21/' android/app/build.gradle
+
     - name: Install Dependencies
       run: flutter pub get
 
     - name: Build APK
       run: flutter build apk --release
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-release
+        path: build/app/outputs/flutter-apk/app-release.apk
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
